@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>MyDesk</title>
+</head>
+<body>
+  <h1>My Desk</h1>
+  <button id="startShare">Start Sharing</button>
+  <video id="localVideo" autoplay></video>
+  <video id="remoteVideo" autoplay></video>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const socket = io();
+
+    let localStream;
+
+    const startShareButton = document.getElementById('startShare');
+    const localVideo = document.getElementById('localVideo');
+    const remoteVideo = document.getElementById('remoteVideo');
+
+    // Obtain media stream (screen sharing)
+    async function getMediaStream() {
+      try {
+        const stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+        localVideo.srcObject = stream;
+        localStream = stream;
+        startShareButton.disabled = true;
+      } catch (err) {
+        console.error('Error accessing media devices:', err);
+      }
+    }
+
+    startShareButton.addEventListener('click', getMediaStream);
+
+    // Set up WebRTC peer connection
+    const peerConnection = new RTCPeerConnection();
+
+    // Add local stream to the peer connection
+    localStream.getTracks().forEach((track) => {
+      peerConnection.addTrack(track, localStream);
+    });
+
+    // Listen for remote tracks
+    peerConnection.ontrack = (event) => {
+      remoteVideo.srcObject = event.streams[0];
+    };
+
+    // Send the offer to the server
+    peerConnection.createOffer().then((offer) => {
+      peerConnection.setLocalDescription(offer);
+      socket.emit('offer', offer);
+    });
+
+    // Listen for the answer from the server
+    socket.on('answer', (answer) => {
+      peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
+    });
+
+    // Listen for ice candidates and send them to the server
+    peerConnection.onicecandidate = (event) => {
+      if (event.candidate) {
+        socket.emit('ice-candidate', event.candidate);
+      }
+    };
+
+    // Listen for ice candidates from other clients
+    socket.on('ice-candidate', (candidate) => {
+      peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+    });
+  </script>
+</body>
+</html>
